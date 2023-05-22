@@ -1,0 +1,182 @@
+\documentclass{article}
+
+% Language setting
+% Replace `english' with e.g. `spanish' to change the document language
+\usepackage[polish]{babel}
+\usepackage[utf8]{inputenc}
+
+% Set page size and margins
+% Replace `letterpaper' with `a4paper' for UK/EU standard size
+\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+% Useful packages
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+\usepackage{caption}
+\captionsetup[figure]{font=small}
+
+
+\title{Agregacja danych z czujnika i Raspberry Pi przy użyciu Apache Kafka i języka Python}
+\author{Stefan Domaradzki}
+
+\begin{document}
+\maketitle 
+
+
+\pagebreak
+
+{
+  \hypersetup{linkcolor=black}
+  \tableofcontents
+}
+ 
+\pagebreak
+
+\section{Data streaming}
+Strumieniowanie danych (data streaming) jest procesem przetwarzania danych, który polega na przesyłaniu ich strumieniowo, tzn. w czasie rzeczywistym lub w małych paczkach, zamiast jednorazowo przesłać cały zbiór danych. Strumienie danych pochodzą z różnych źródeł, takich jak sensory lub aplikacje internetowe. Strumieniowanie danych pozwala na przetwarzanie i analizowanie danych w czasie rzeczywistym, co umożliwia szybkie reagowanie na zmieniające się warunki.
+
+
+
+\section{Raspberry Pi}
+Raspberry Pi to mały jednopłytkowy komputer o stosunkowowo dobrej mocy obliczeniowej. Na jednej małej płytce znajdują się procesor, pamięć RAM, USB, HDMI, czy Ethernet. Architektura płytki została oparta na układzie systemu na chipie (SoC). I jest w stanie uruchamiać standardowe systemy operacyjne, lub dedytkowany Raspberry Pi OS.
+
+
+\section{Realizacja}
+
+\subsection{Konfiguracja RaspberryPi}
+\subsubsection{System Operacyjny}
+Instalacja systemu operacyjnego na RaspberryPi jest bardzo prosta. Wykorzystane zostaje darmowe oprogramowanie zapewnione przez producenta mikrokomputera o nazwie \textit{Raspberry Pi Imager"}. Dzięki niemu mamy dostęp wybrania preferowanego systemu operacyjnego. Wybrano \textit{RaspberryPi OS (32-bit)}. Wybieramy docelowe miejsce instalacji systemu (Karta microSD).
+
+\subsubsection{Konfiguracja IP}
+Dla prostszego łączenia się z Raspberry skonfigurowano statyczny adres IP dla połączenia przewodowego. Ponieważ nie istnieje możliwość ustawienia tego parametru z poziomu instalatora \textit{Raspberry Pi Imager}, należy dokonać edycji pliku znajdującego się pod następującą ścieżką \textit{\etc\dhcpcd.conf} zgodnie z zamieszczonym rysunkiem.
+
+\\
+\begin{figure}[htb]
+    \centering
+    \includegraphics[width=12cm]{interface eth0.png}
+    \caption{Konfiguracja pliku dhcpcd.conf}
+    \label{fig:dhcpcd.conf}
+\end{figure}
+\\
+
+Oczywiście nadany adres może być dowolny należy jednak pamiętać, że to za jego pomocą następuje połączenie do urządzenie.
+
+W przypadku wiersza \textit{staticrouters} zapisujemy IP urządzenia które służy jako router i jednocześnie Kafka Server.
+
+\\
+\begin{figure}[htb]
+    \centering
+    \includegraphics[width=8cm]{eth0 PC.png}
+    \caption{Konfiguracja sieci na PC}
+    \label{fig:dhcpcd.conf}
+\end{figure}
+\\
+
+\subsubsection{DNS resolution }
+
+Jeśli nie jest możliwe przypisanie nazwy hosta do adresu IP, nastąpi błąd w wyszukiwaniu DNS.
+
+Jeśli DNS resolution nie działa poprawnie, należy dodać wpis do pliku \textit{/etc/hosts} na Raspberry Pi. Po otworzeniu  za pomocą dowolnego edytora tekstu należy dodać w nim linijkę z adresem IP brokera Kafka i jego nazwą hosta. Przykładowo:
+\\
+\begin{center}
+
+\textit{192.168.1.218  "Nazwa Hosta"}
+
+\end{center}
+\\
+
+Dobrą praktyką jest również wyczyszczenie pamięci podręcznej i resolverów na maszynie funkcjonującej jako Kafka server Co zagwarantuje aktualność wszystkich rekordów DNS.
+
+\\
+\begin{figure}[htb]
+    \centering
+    \includegraphics[width=8cm]{flush dns.png}
+    \caption{Czyszczenie pamięci podręcznej DNS}
+    \label{fig:flushdns}
+\end{figure}
+\\
+
+
+\subsection{Połączenie}
+Połączenie następuje poprzez użycie SSH. SSH to standard protokołów komunikacyjnych używanych w sieciach komputerowych TCP/IP. 
+Po podłączeniu Raspberry Pi za pomocą przewodu sieciowego do urządzenia działającego jako serwer Kafki wykonujemy następującą komendę:
+
+\\
+\begin{center}
+    \textit{SSH pi@192.168.1.217}
+\end{center}
+Pamiętając, że jest to wcześniej ustawiony adres używanego mikrokomputera.
+
+Sprawdzenie dostępności portu na którym pracuje \textit{Kafka Server}:
+
+\\
+\begin{figure}[htb]
+    \centering
+    \includegraphics[width=12cm]{port connection test.png}
+    \caption{Test dostępności portu 9092}
+    \label{fig:9092 connection}
+\end{figure}
+\\
+
+
+\subsection{Skrypty w języku python}
+
+\subsubsection{Temperature Producer}
+
+Skrypt \textit{Temperature Producer} znajduje się na wykorzystywanym urządzeniu Raspberry Pi. Korzysta on z dwóch bibliotek
+
+\begin{itemize}
+    \item w1thermsensor - zawiera metodę do pobrania temeratury z czujnika,
+    \item kafka - odpowiada za przysyłanie wiadomości do servera kafki
+\end{itemize}
+
+
+
+Na początku należy dokonać definicji producenta wiadomości dla serwera Kafka, przypisujemy adres hosta i port hosta, oraz wybieramy sposób serializowania wiadomości, może być dowolny, lecz należy pamiętać by był on zgodny ze sposobem użytym w konsumerze.
+
+\\
+\begin{center}
+\begin{verbatim}
+    temperature_producer = KafkaProducer(
+        bootstrap_server=['host_ip:port'], #change to current host IP
+        value_serializer=lamba v: json.dumps(v).encode('utf-8'),
+        api_version=(3,3,1)
+        )
+\end{verbatim} 
+\end{center}
+\\
+
+W pętli \textit{While} odbywa się pobieranie temperatury za pomocą funkcji: 
+\\
+
+\begin{center}
+\begin{verbatim}
+    temperature = sensor.get_temperature()
+\end{verbatim} 
+\end{center}
+\\
+
+Następnie korzystając z producenta wiadomości zostają wysyłane:
+
+\\
+\begin{center}
+    \begin{verbatim}
+    temperature_producer.send(kafka_topic, temperature)
+    \end{verbatim}
+\end{center}
+\\
+
+Operacja wysyłania zostaje zakończona komendą \textit{producer.flush()}.
+
+\subsection{Consumer.py}
+Kafka Consumer znajduje się na tej samej maszynie która służy za \textit{Kafka Server}. Z tego powodu w skrypcie wszędzie wykorzystano argument:
+\\
+\begin{center}
+   \begin{textit} bootstrap\_servers[localhost:9092] \end{textit} 
+\end{center}
+
+
+\section{Wnioski}
+Projekt z wykorzystaniem czujnika temperatury, Raspberry Pi i biblioteki Kafka Python dostarczył wartościowych wniosków oraz zapewnił cenne doświadczenie związane z sieciami komputerowymi. Debugowanie błędów połączenia z brokerem Kafka ujawniło problem z DNS Resolution. Rozwiązanie wymagało edycji pliku \textit{/etc/hosts}. rojekt dostarczył cenne doświadczenie w zakresie konfiguracji połączenia z brokerem Kafka, produkcji i konsumpcji danych w czasie rzeczywistym oraz rozwiązywania problemów z sieciami komputerowymi.
+\end{document}
