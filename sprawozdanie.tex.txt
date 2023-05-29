@@ -1,38 +1,50 @@
-\documentclass{article}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% %
+%%% % weiiszablon.tex
+%%% % The Faculty of Electrical and Computer Engineering
+%%% % Rzeszow University Of Technology diploma thesis Template
+%%% % Szablon pracy dyplomowej Wydziału Elektrotechniki 
+%%% % i Informatyki PRz
+%%% % June, 2015
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Language setting
-% Replace `english' with e.g. `spanish' to change the document language
-\usepackage[polish]{babel}
-\usepackage[utf8]{inputenc}
+\documentclass[12pt,twoside]{article}
 
-% Set page size and margins
-% Replace `letterpaper' with `a4paper' for UK/EU standard size
-\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+\usepackage{weiiszablon}
 
-% Useful packages
-\usepackage{amsmath}
-\usepackage{graphicx}
-\usepackage[colorlinks=true, allcolors=blue]{hyperref}
-\usepackage{caption}
-\captionsetup[figure]{font=small}
-
-
-\title{Agregacja danych z czujnika i Raspberry Pi przy użyciu Apache Kafka i języka Python}
 \author{Stefan Domaradzki}
 
+% np. EF-123456, EN-654321, ...
+\studentID{FS-166642}
+
+\title{Agregacja danych z czujnika i Raspberry Pi przy użyciu Apache Kafka i języka Python}
+\titleEN{Temat pracy po angielsku}
+
+
+%%% wybierz rodzaj pracy wpisując jeden z poniższych numerów: ...
+% 1 = inżynierska	% BSc
+% 2 = magisterska	% MSc
+% 3 = doktorska		% PhD
+%%% na miejsce zera w linijce poniżej
+\newcommand{\rodzajPracyNo}{4}
+
+
+%%% promotor
+\supervisor{Dr. Marek Bolanowski}
+%% przykład: dr hab. inż. Józef Nowak, prof. PRz
+
+
 \begin{document}
-\maketitle 
 
+% strona tytułowa
+\maketitle
 
-\pagebreak
+\blankpage
 
-{
-  \hypersetup{linkcolor=black}
-  \tableofcontents
-}
- 
-\pagebreak
+% spis treści
+\tableofcontents
 
+\newpage
 \section{Data streaming}
 Strumieniowanie danych (data streaming) jest procesem przetwarzania danych, który polega na przesyłaniu ich strumieniowo, tzn. w czasie rzeczywistym lub w małych paczkach, zamiast jednorazowo przesłać cały zbiór danych. Strumienie danych pochodzą z różnych źródeł, takich jak sensory lub aplikacje internetowe. Strumieniowanie danych pozwala na przetwarzanie i analizowanie danych w czasie rzeczywistym, co umożliwia szybkie reagowanie na zmieniające się warunki.
 
@@ -106,10 +118,12 @@ Po podłączeniu Raspberry Pi za pomocą przewodu sieciowego do urządzenia dzia
 \begin{center}
     \textit{SSH pi@192.168.1.217}
 \end{center}
+\\
+
 Pamiętając, że jest to wcześniej ustawiony adres używanego mikrokomputera.
 
 Sprawdzenie dostępności portu na którym pracuje \textit{Kafka Server}:
-
+\newpage
 \\
 \begin{figure}[htb]
     \centering
@@ -119,6 +133,35 @@ Sprawdzenie dostępności portu na którym pracuje \textit{Kafka Server}:
 \end{figure}
 \\
 
+
+\subsection{Termometr}
+
+Wykorzystano następujący schemat połączenia czujnika \textit{DS18B20}  z Raspberry Pi:
+
+\\
+\begin{figure}[htb]
+    \centering
+    \includegraphics[width=12cm]{schemat połączenia.png}
+    \caption{Termometr schemat połączenia}
+    \label{fig:Termometr schemat połączenia}
+\end{figure}
+\\
+Aby jednak można było odczytać temperaturę z czujnika należy włączyć odpowiedni sterownik w jądrze systemu Raspberry.
+
+Aby to zrobić należy włączyć panel konfiguracji:
+
+\\
+\begin{center}
+    \textit{sudo raspi-config}
+\end{center}
+\\
+I w zakładce "Interfacing Options" włączyć opcję: P7 1-Wire.
+Na koniec należy zrestartować użądzenie za pomocą komendy: 
+\\
+\begin{center}
+    \textit{sudo reboot now}
+\end{center}
+\\
 
 \subsection{Skrypty w języku python}
 
@@ -135,48 +178,64 @@ Skrypt \textit{Temperature Producer} znajduje się na wykorzystywanym urządzeni
 
 Na początku należy dokonać definicji producenta wiadomości dla serwera Kafka, przypisujemy adres hosta i port hosta, oraz wybieramy sposób serializowania wiadomości, może być dowolny, lecz należy pamiętać by był on zgodny ze sposobem użytym w konsumerze.
 
-\\
-\begin{center}
-\begin{verbatim}
-    temperature_producer = KafkaProducer(
-        bootstrap_server=['host_ip:port'], #change to current host IP
-        value_serializer=lamba v: json.dumps(v).encode('utf-8'),
-        api_version=(3,3,1)
-        )
-\end{verbatim} 
-\end{center}
-\\
+\begin{lstlisting}[language=Python,caption=Definicja producera Kafka,label={Producer Kaf}]
+temperature_producer = KafkaProducer(
+    bootstrap_server=['host_ip:port'], #change to current host IP
+    value_serializer=lamba v: json.dumps(v).encode('utf-8'),
+    api_version=(3,3,1)
+    )
 
-W pętli \textit{While} odbywa się pobieranie temperatury za pomocą funkcji: 
+\end{lstlisting}
 \\
+Protokołem wykorzystywanym jest domyślny dla Kafki protokół TCP.
 
-\begin{center}
-\begin{verbatim}
-    temperature = sensor.get_temperature()
-\end{verbatim} 
-\end{center}
-\\
+Pętla \textit{While} odpowiadająca za pobranie i wysłanie informacji. Operacja wysyłania zostaje zakończona komendą \textit{producer.flush()}. Gwarantującą, że wszystkie wiadomości przygotowane do wysłania trafią do brokera wiadomości kafka.
+\\ 
+\begin{lstlisting}[language=Python,caption=Definicja producera Kafka,label={Producer Kaf}]
+kafka_topic = 'Ethernet'
+    
+    while True:
 
-Następnie korzystając z producenta wiadomości zostają wysyłane:
-
-\\
-\begin{center}
-    \begin{verbatim}
-    temperature_producer.send(kafka_topic, temperature)
-    \end{verbatim}
-\end{center}
-\\
-
-Operacja wysyłania zostaje zakończona komendą \textit{producer.flush()}.
+        temperature = sensor.get_temperature()
+        temperature_producer.send(kafka_topic, temperature)
+        temperature_producer.flush()
+        sleep(1)
+\end{lstlisting}
 
 \subsection{Consumer.py}
-Kafka Consumer znajduje się na tej samej maszynie która służy za \textit{Kafka Server}. Z tego powodu w skrypcie wszędzie wykorzystano argument:
-\\
-\begin{center}
-   \begin{textit} bootstrap\_servers[localhost:9092] \end{textit} 
-\end{center}
+Kafka Consumer znajduje się na tej samej maszynie która służy za \textit{Kafka Server}. Z tego powodu w skrypcie wykorzystano argument: \begin{textit} bootstrap\_servers[localhost:9092] \end{textit} 
+
+Kafka Consumer definiujemy analogicznie do Producera:
+
+\begin{lstlisting}[language=Python,caption=Definicja producera Kafka,label={Producer Kaf}]
+simple_consumer = KafkaConsumer(
+                    auto_offset_reset='earliest',
+                    bootstrap_servers=['localhost:9092'],
+                    api_version=(3,3,1))
+
+simple_consumer.subscribe('Ethernet')                    
+\end{lstlisting}
+Operacja kończy się zasubskrybowaniem do tematu z którego docelowo będą zczytywane dane.
+Parametr \textit{earliest} jest kluczowy, gdyż dzięki niemu możliwe jest odczytywanie wiadomości w miarę jak nadchodzą, co jest funkjcjonalnością ostatniej części \textit{Consumera}. 
+
+
 
 
 \section{Wnioski}
 Projekt z wykorzystaniem czujnika temperatury, Raspberry Pi i biblioteki Kafka Python dostarczył wartościowych wniosków oraz zapewnił cenne doświadczenie związane z sieciami komputerowymi. Debugowanie błędów połączenia z brokerem Kafka ujawniło problem z DNS Resolution. Rozwiązanie wymagało edycji pliku \textit{/etc/hosts}. rojekt dostarczył cenne doświadczenie w zakresie konfiguracji połączenia z brokerem Kafka, produkcji i konsumpcji danych w czasie rzeczywistym oraz rozwiązywania problemów z sieciami komputerowymi.
-\end{document}
+
+\section{Pliki projektu}
+https://github.com/Stefan-Luna-Domaradzki/Kafka-Raspberry-Thermometer
+
+\addcontentsline{toc}{section}{Literatura}
+
+\begin{thebibliography}{4}
+\bibitem{str} http://weii.portal.prz.edu.pl/pl/materialy-do-pobrania. Dostęp 5.01.2015.
+\bibitem{str} https://forbot.pl/blog/kurs-raspberry-pi-czujnik-temperatury-ds18b20-id26430
+\end{thebibliography}
+
+\clearpage
+
+\makesummary
+
+\end{document} 
